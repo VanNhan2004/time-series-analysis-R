@@ -65,7 +65,6 @@ source("nonseasonal_analysis.R")
 ## 👨‍🎓 Thông tin sinh viên
 
 - **Họ tên:** Nguyễn Văn Nhân  
-- **MSSV:** 2200002045  
-- **Lớp:** 22DTH4C  
+- **MSSV:** 2200002045   
 - **Trường:** Đại học Nguyễn Tất Thành  
 - **Môn học:** Phân tích dữ liệu chuỗi thời gian
