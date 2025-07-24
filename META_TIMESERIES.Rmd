@@ -1,0 +1,145 @@
+---
+title: "META_TIMESERIES"
+output: html_document
+date: "2025-04-09"
+---
+#Cài đặt các thư viện
+```{r}
+install.packages("forecast")   
+install.packages("tseries")   
+install.packages("TSA")
+install.packages("rugarch")
+```
+#Đọc và kiểm tra dữ liệu
+```{r}
+df <- read.csv("META.csv")
+# Kiểm tra dữ liệu thiếu
+if (anyNA(df$Close)) stop("Dữ liệu chứa giá trị NA")
+if (any(df$Close <= 0)) stop("Dữ liệu chứa giá trị không hợp lệ")
+
+# Chuyển đổi Date thành định dạng thời gian
+df$Date <- as.Date(df$Date, format = "%Y-%m-%d")
+
+# Vẽ biểu đồ giá đóng cửa
+plot(df$Date, df$Close, type = "l", col = "blue",
+     main = "META Stock Price Over Time",
+     xlab = "Date", ylab = "Close Price (USD)")
+```
+#Biến đổi log và kiểm tra tính dừng
+```{r}
+library(tseries)
+# Tạo chuỗi log
+df$LogClose <- log(df$Close)
+
+# Vẽ chuỗi log
+plot(df$Date, df$LogClose, type = "l", col = "blue",
+     main = "Log of META Close Price", xlab = "Date", ylab = "Log Close Price")
+
+# Kiểm tra tính dừng của chuỗi gốc
+adf_test_close <- adf.test(df$Close)
+print(adf_test_close)
+
+# Kiểm tra tính dừng của chuỗi log
+adf_test_log <- adf.test(df$LogClose)
+print(adf_test_log)
+
+# Vẽ ACF và PACF của chuỗi log
+par(mfrow = c(1, 2))
+acf(df$LogClose, main = "ACF of Log Close", lag.max = 50)
+pacf(df$LogClose, main = "PACF of Log Close", lag.max = 50)
+```
+#Sai phân bậc 1 và kiểm tra lại
+```{r}
+library(TSA)
+# Sai phân bậc 1 trên chuỗi log
+df$LogClose_diff <- c(NA, diff(df$LogClose))
+LogClose_diff_clean <- na.omit(df$LogClose_diff)
+
+# Kiểm tra tính dừng của chuỗi sai phân
+adf_test_diff <- adf.test(LogClose_diff_clean)
+print(adf_test_diff)
+
+# Vẽ chuỗi sau sai phân
+plot(df$Date[-1], LogClose_diff_clean, type = "l", col = "blue",
+     main = "Differenced Log Close Price",
+     xlab = "Date", ylab = "Diff Log Close")
+
+# Vẽ ACF và PACF của chuỗi sai phân
+par(mfrow = c(1, 2))
+acf(LogClose_diff_clean, main = "ACF of Differenced Log Close", lag.max = 50)
+pacf(LogClose_diff_clean, main = "PACF of Differenced Log Close", lag.max = 50)
+```
+#Xác định mô hình ARIMA
+```{r}
+library(forecast)
+# Sử dụng eacf để đề xuất mô hình
+eacf(LogClose_diff_clean)
+
+# Huấn luyện mô hình ARIMA trên chuỗi sai phân
+fit_arima <- auto.arima(df$LogClose, seasonal = FALSE, stepwise = TRUE, trace = TRUE)
+summary(fit_arima)
+
+# Kiểm tra phần dư
+checkresiduals(fit_arima)
+
+# Vẽ diagnostics cho phần dư
+par(mfrow = c(2, 2))
+plot(residuals(fit_arima), main = "Residuals")
+qqnorm(residuals(fit_arima)); qqline(residuals(fit_arima), col = "red")
+acf(residuals(fit_arima), main = "ACF of Residuals")
+pacf(residuals(fit_arima), main = "PACF of Residuals")
+
+# Ljung-Box test
+Box.test(residuals(fit_arima), lag = 20, type = "Ljung-Box")
+```
+#Dự báo với ARIMA
+```{r}
+# Dự báo 30 ngày
+forecast_arima <- forecast(fit_arima, h = 30, level = c(80, 95))
+plot(forecast_arima, main = "ARIMA Forecast for Log Close Price")
+summary(forecast_arima)
+```
+#Kiểm tra phần dư của mô hình ARIMA
+```{r}
+res_squared <- residuals^2
+
+par(mfrow = c(1, 2))
+acf(res_squared, main = "ACF of Squared Residuals")
+pacf(res_squared, main = "PACF of Squared Residuals")
+
+```
+#Mô hình GARCH
+```{r}
+library(rugarch)
+log_returns <- na.omit(df$LogClose_diff)
+# Cấu hình mô hình GARCH(1,1) với phân phối chuẩn
+spec_garch <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
+  mean.model = list(armaOrder = c(0,0), include.mean = TRUE),
+  distribution.model = "norm"
+)
+
+# Huấn luyện mô hình
+fit_garch <- ugarchfit(spec = spec_garch, data = log_returns)
+
+# Kết quả mô hình
+show(fit_garch)
+
+```
+#Kiểm tra phần dư và mô hình
+```{r}
+plot(fit_garch, which = "all")
+
+# Kiểm tra phần dư mô hình
+resid_garch <- residuals(fit_garch, standardize = TRUE)
+Box.test(resid_garch^2, lag = 20, type = "Ljung-Box")  # nên > 0.05 để không còn ARCH effect
+
+par(mfrow = c(1, 2))
+acf(resid_garch^2, main = "ACF of Squared Residuals")
+pacf(resid_garch^2, main = "PACF of Squared Residuals")
+```
+#Dự báo độ biến động
+```{r}
+forecast_garch <- ugarchforecast(fit_garch, n.ahead = 20)
+plot(forecast_garch,which = 3)
+```

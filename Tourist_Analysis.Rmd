@@ -1,0 +1,87 @@
+---
+title: "Tourist"
+output: html_document
+date: "2025-04-13"
+---
+
+```{r}
+install.packages('CADFtest')
+# Load thư viện
+library(forecast)
+library(CADFtest)
+```
+
+```{r}
+# Doc du lieu
+data <- read.csv("tourism.csv")
+data$Date <- as.Date(data$Date, format = "%m/%d/%Y")
+
+# Tong hop du lieu theo ngay
+data_agg <- aggregate(Tourist ~ Date, data, sum)
+data_agg <- data_agg[order(data_agg$Date), ]
+
+# Tao chuoi thoi gian
+ts_data <- ts(data_agg$Tourist, start = 1998, frequency = 4)
+```
+
+```{r}
+# Ve bieu do chuoi thoi gian
+plot(ts_data, main = "So luong khach du lich", xlab = "Nam", ylab = "Khach du lich")
+
+# Phan ra chuoi thoi gian
+decomp <- stl(ts_data, s.window = "periodic")
+plot(decomp, main = "Phan ra chuoi thoi gian")
+```
+
+```{r}
+library(forecast)
+ndiffs(ts_data)
+nsdiffs(ts_data)
+```
+
+```{r}
+library(tseries)
+# Kiem tra tinh dung
+adf.test(ts_data)
+
+# Sai phan
+diff_ts <- diff(diff(ts_data, lag = 4))
+adf.test(diff_ts)
+
+# Ve ACF va PACF
+par(mfrow = c(1, 2))
+acf(diff_ts, main = "ACF sau sai phan")
+pacf(diff_ts, main = "PACF sau sai phan")
+```
+
+
+```{r}
+# Xay dung mo hinh SARIMA
+fit <- auto.arima(ts_data, seasonal = TRUE)
+
+# Xem ket qua mo hinh
+summary(fit)
+
+# Kiểm tra phần dư
+checkresiduals(fit)
+
+# Vẽ diagnostics cho phần dư
+par(mfrow = c(2, 2))
+plot(residuals(fit), main = "Residuals")
+qqnorm(residuals(fit)); qqline(residuals(fit), col = "red")
+acf(residuals(fit), main = "ACF of Residuals")
+pacf(residuals(fit), main = "PACF of Residuals")
+
+# Ljung-Box test
+Box.test(residuals(fit), lag = 20, type = "Ljung-Box")
+```
+
+```{r}
+
+fc <- forecast(fit, h = 8)
+# Ve bieu do du bao
+plot(fc, main = "Du bao khach du lich", xlab = "Nam", ylab = "Khach du lich")
+lines(fitted(fit), col = "red", lty = 2)
+legend("topleft", legend = c("Du bao", "Gia tri mo hinh"), col = c("blue", "red"), lty = c(1, 2))
+```
+
